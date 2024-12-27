@@ -1,0 +1,176 @@
+#!/bin/sh
+
+help() {
+    echo "Usage:"
+    echo "- create: zfsbak DATASET [ROTATION_CNT]"
+    echo "- list: zfsbak -l|--list [DATASET|ID|DATASET ID...]"
+    echo "- delete: zfsbak -d|--delete [DATASET|ID|DATASET ID...]"
+    echo "- export: zfsbak -e|--export DATASET [ID]"
+    echo "- import: zfsbak -i|--import FILENAME DATASET"
+}
+
+create() {
+    local dataset="$1"
+    local rotationCnt="$2"
+    local snapshot_name="$dataset@zfsbak_$(date +'%Y-%m-%d-%H%:%M:%S')"
+    
+    if [ "$rotationCnt" == "" ] || [ "$rotationCnt" -gt 12 ]; then
+        rotationCnt=12
+    fi
+
+    zfs snapshot "$snapshot_name"
+    echo "Snap $snapshot_name"
+
+    local snapshots=$(zfs list -t snapshot -o name -H | grep "^$dataset@zfsbak_" | sort -t'@' -k2)
+    local snapshotCnt=$(echo "$snapshots" | wc -l)
+
+    if [ "$snapshotCnt" -gt "$rotationCnt" ]; then
+        local snapshot_delete=$(echo "$snapshots" | head -n "$((snapshotCnt - rotationCnt))")
+
+        for snap in $snapshot_delete; do
+            	zfs destroy "$snap"
+                echo "Destory $snap"
+        done
+    fi
+}
+
+delete() {
+    local dataset="$2"
+    shift 2
+    local id="$@"
+    local temp
+
+    if [ "$dataset" -eq "$dataset" ] 2>/dev/null; then
+	temp=$id
+	id=$dataset
+	dataset=""
+    fi
+    
+    local snapshots
+    if [ -n "$dataset" ]; then
+    	snapshots=$(zfs list -t snapshot -o name -H | grep "^$dataset@zfsbak_" | sort -t'@' -k2)
+    else
+	snapshots=$(zfs list -t snapshot -o name -H | grep "@zfsbak_" | sort -t'@' -k2)
+    fi 
+
+    if [ "$id" == "-d" ]; then
+	for snap in $snapshots; do
+   	    zfs destroy "$snap"
+	    echo "Destroy $snap"
+	done
+	return
+    fi
+
+    if [ "$id" == "" ] && [ "$dataset" != "" ]; then
+    	for snap in $snapshots; do
+            zfs destroy "$snap"
+            echo "Destroy $snap"
+        done
+	return
+    fi
+
+    local index=1
+    for snap in $snapshots; do
+        for idx in $temp; do
+	    if [ "$idx" == "$index" ]; then
+		zfs destroy "$snap"
+		echo "Destroy $snap"
+	    fi
+	done
+        index=$((index + 1))
+    done
+
+    local index=1
+    for snap in $snapshots; do
+        for idx in $id; do
+            if [ "$idx" == "$index" ]; then
+                zfs destroy "$snap"
+                echo "Destroy $snap"
+            fi
+        done
+        index=$((index + 1))
+    done
+}
+
+list() {
+    local dataset="$1"
+    local id="$2"
+
+    if [ "$dataset" -eq "$dataset" ] 2>/dev/null; then
+	id="$dataset"
+	dataset=""
+    fi
+
+    local index=1
+    zfs list -t snapshot -o name -H | grep "$dataset@zfsbak_" | sort -t'@' -k2 | while IFS= read -r snap; do 
+        local snap_dataset=$(echo "$snap" | cut -d'@' -f1)
+	local snap_time=$(echo "$snap" | cut -d'@' -f2 | sed 's/zfsbak_//')
+        
+        if [ "$id" == "" ]; then
+        	echo -e "$index\t$snap_dataset\t$snap_time"
+	elif [ "$id" == "$index" ]; then
+		echo -e "$index\t$snap_dataset\t$snap_time"
+	fi
+	index=$((index + 1))
+    done
+
+}
+
+exporting() {
+	dataset=$1
+	id=${2:-1}
+
+	local inpit=""
+	local index=1
+	local snapshots=$(zfs list -t snapshot -o name -H | grep "$dataset@zfsbak_" | sort -t'@' -k2)
+	for snap in $snapshots; do
+	    if [ "$index" -eq "$id" ]; then
+		input="$snap"
+		break
+	    fi
+	    index=$((index + 1))
+	done
+	
+	user_home=$(getent passwd | grep $SUDO_USER | cut -d: -f6)
+	output="${user_home}/$(echo $input |tr '/' '_').zst.aes"
+	
+	zfs send -R "$input" | zstd -qc - | openssl aes-256-cbc -k "$ZFSBAK_PASS"  -pbkdf2 -out "$output"
+	echo Export "$input" to "~/$(echo $input |tr '/' '_').zst.aes"
+}
+
+importing() {
+    local filename="$1"
+    local dataset="$2"
+
+    zstd -qcd "$filename" | zfs receive "$dataset"
+    echo "Import $filename to $dataset"
+}
+
+
+if [ "$#" -lt 1 ]; then
+    help
+    exit 1
+fi
+
+case "$1" in 
+    -h | --help)
+        help
+        exit 1
+        ;;
+    -l | --list)
+        echo -e "ID\tDATASET\t\tTIME"
+	list "$2" "$3"
+        ;;
+    -d | --delete)
+        delete "$@"
+        ;;
+    -e | --export)
+	exporting "$2" "$3"
+    	;;
+    -i | --import)
+	importing "$2" "$3"
+	;;
+    *)  
+        create "$1" "$2"
+        ;;
+esac

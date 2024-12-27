@@ -1,0 +1,52 @@
+#!/bin/sh
+#
+#
+
+# PROVIDE: sftp_watchd
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+
+
+. /etc/rc.subr
+
+name="sftp_watchd"
+rcvar="sftp_watchd_enable"
+
+cmd="/usr/local/bin/${name}"
+daemon="/usr/sbin/daemon"
+pidFile="/var/run/${name}.pid"
+
+start_cmd="${name}_start"
+stop_cmd="${name}_stop"
+restart_cmd="${name}_restart"
+status_cmd="${name}_status"
+
+sftp_watchd_start() {
+    echo "Starting sftp_watchd."
+    unlink /dev/log
+    ln -s /home/sftp/dev/log /dev/log
+    "$daemon" -f -p "$pidFile" "$cmd"
+} 
+
+sftp_watchd_stop() {
+    if [ ! -e "$pidFile" ]; then
+        return 1
+    fi
+    echo "Kill: $(cat "$pidFile")"
+    kill -TERM $(cat "$pidFile")
+}
+
+sftp_watchd_restart() {
+    sftp_watchd_stop
+    sftp_watchd_start
+}
+
+sftp_watchd_status() {
+    if [ -e "$pidFile" ]; then
+	echo "sftp_watchd is running as pid $(cat "$pidFile")."
+    fi	
+}
+
+
+load_rc_config "$name"
+run_rc_command "$1"
