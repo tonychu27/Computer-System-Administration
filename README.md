@@ -1,7 +1,7 @@
 > [!CAUTION]
 > Don't copy my work or you will be caught for plagiarism 🙅‍♂️⛔️
 # Computer System Administration
-2024 Fall NYCU 
+2024 Fall NYCU, Meng-Hsun Tsai
 
 | HW |               Name                  |        
 | :---     |                                 ---:|
