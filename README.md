@@ -4,7 +4,7 @@
 2024 Fall NYCU, Meng-Hsun Tsai
 
 | HW |               Name                  |        
-| :---     |                                 ---:|
+| :---     |                                 :---|
 | HW1     | System Setup: Install Ubuntu / FreeBSD | 
 | HW2    | Shell Script |
 | HW3     | File Server & Backup |
